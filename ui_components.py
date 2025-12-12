@@ -79,16 +79,36 @@ def render_preventive_sentinel(analysis: AdvancedAnalysis):
             st.warning(f"**{risk['label']}**: {risk['reasoning']}")
 
 def render_prescriptive_plan(analysis: AdvancedAnalysis):
-    # ... (Implementation from previous correct step)
-    pass
-
-def render_prescriptive_plan(analysis: AdvancedAnalysis):
-    with st.container(border=True, height=300):
+    with st.container(border=True, height=200):
         st.subheader("Protocol Engine")
         if not analysis["prescriptions"]:
             st.info("Targets met")
         for rx in analysis["prescriptions"]:
-            st.info(f"**{rx['action']}**: {rx['rationale']}")
+            icon = "⚡" if rx['urgency'] == 'stat' else "📝"
+            st.info(f"{icon} **{rx['action']}**: {rx['rationale']}")
+
+def render_predictive_horizon(history: list, forecast: list, label: str):
+    if not forecast or len(history) < 5:
+        st.info("Insufficient data to generate forecast.")
+        return
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=[d['time'] for d in history], y=[d['map'] for d in history], mode='lines', line=dict(color=COLORS["hemo"], width=2), name='History'))
+    fig.add_trace(go.Scatter(x=[d['time'] for d in forecast], y=[d['value'] for d in forecast], mode='lines', line=dict(color=COLORS["hemo"], width=2, dash='dash'), name='Forecast'))
+    
+    # Confidence interval
+    x_forecast = [d['time'] for d in forecast]
+    y_upper = [d['upper'] for d in forecast]
+    y_lower = [d['lower'] for d in forecast]
+    
+    fig.add_trace(go.Scatter(
+        x=x_forecast + x_forecast[::-1], 
+        y=y_upper + y_lower[::-1], 
+        fill='toself', 
+        fillcolor=f'rgba({int(COLORS["hemo"][1:3],16)},{int(COLORS["hemo"][3:5],16)},{int(COLORS["hemo"][5:7],16)},0.2)', 
+        line=dict(width=0), 
+        name='Confidence'
+    ))
+    render_chart_container("Predictive Horizon", label, fig)
 
 def render_treatment_header(vis: float, weight: float):
     c1, c2 = st.columns(2)
@@ -117,23 +137,42 @@ def render_chart_tabs() -> str:
     return st.radio("Select View", ['hemo', 'mech', 'resp', 'meta', 'sofa', 'neuro'], format_func=lambda x: x.upper(), horizontal=True, label_visibility="collapsed")
 
 def render_main_chart_view(active_tab: str, current: SimulationStep, history: list):
-    col1, col2 = st.columns(2)
-    chart_map = {
-        'hemo': [render_forrester_plot, render_guyton_plot, render_map_trend_plot, render_coupling_plot],
-        'mech': [render_pv_loop_plot, render_frank_starling_plot, render_energetics_plot, render_energetic_phase_plot],
-        'resp': [render_vent_scalars, render_protective_vent_radar, render_pf_ratio_gauge, render_mechanical_power_gauge],
-        'meta': [render_metabolic_radar, render_o2er_gauge, render_oxygen_balance_plot, render_lactate_trend_plot],
-        'sofa': [render_sofa_radar_plot, render_sofa_trend_plot],
-        'neuro': [render_cerebral_auto_plot, render_intracranial_compliance_plot, None, render_oxy_hemo_dissociation_plot]
-    }
-    charts_to_render = chart_map.get(active_tab, [])
+    # Mapping tabs to specific render functions
+    # Using simple layout: 2x2 grid
+    c1, c2 = st.columns(2)
     
-    with col1:
-        if charts_to_render: charts_to_render[0](history if 'data' in charts_to_render[0].__code__.co_varnames else current)
-        if len(charts_to_render) > 2: charts_to_render[2](history if 'data' in charts_to_render[2].__code__.co_varnames else current)
-    with col2:
-        if len(charts_to_render) > 1: charts_to_render[1](history if 'data' in charts_to_render[1].__code__.co_varnames else current)
-        if len(charts_to_render) > 3: charts_to_render[3](history if 'data' in charts_to_render[3].__code__.co_varnames else current)
+    if active_tab == 'hemo':
+        with c1: render_forrester_plot(history)
+        with c2: render_guyton_plot(current)
+        with c1: render_map_trend_plot(history)
+        with c2: render_coupling_plot(history)
+        
+    elif active_tab == 'mech':
+        with c1: render_pv_loop_plot(current)
+        with c2: render_frank_starling_plot(current)
+        with c1: render_energetics_plot(current)
+        with c2: render_energetic_phase_plot(history)
+        
+    elif active_tab == 'resp':
+        with c1: render_vent_scalars(current)
+        with c2: render_protective_vent_radar(current)
+        with c1: render_pf_ratio_gauge(current)
+        with c2: render_mechanical_power_gauge(current)
+        
+    elif active_tab == 'meta':
+        with c1: render_metabolic_radar(current)
+        with c2: render_o2er_gauge(current)
+        with c1: render_oxygen_balance_plot(history)
+        with c2: render_lactate_trend_plot(history)
+        
+    elif active_tab == 'sofa':
+        with c1: render_sofa_radar_plot(current)
+        with c2: render_sofa_trend_plot(history)
+        
+    elif active_tab == 'neuro':
+        with c1: render_cerebral_auto_plot(current)
+        with c2: render_intracranial_compliance_plot(current)
+        with c1: render_oxy_hemo_dissociation_plot(current)
 
 # --- INDIVIDUAL CHART FUNCTIONS (COMPLETE IMPLEMENTATIONS) ---
 
