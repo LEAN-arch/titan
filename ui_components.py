@@ -35,11 +35,16 @@ def render_shock_state_tile(current_step: SimulationStep):
     """, unsafe_allow_html=True)
 
 def render_vital_card(label: str, value: float, unit: str, threshold: dict = None):
+    # Fix: Separate formatting logic to avoid f-string syntax error
+    if label in ['CI', 'Lactate', 'CPO']:
+        val_str = f"{value:.1f}"
+    else:
+        val_str = f"{int(value)}"
+        
     is_crit = threshold and (value < threshold["min"] or value > threshold["max"])
-    st.metric(label, f"{value:.1f if label in ['CI','Lactate','CPO'] else int(value)} {unit}", delta="CRITICAL" if is_crit else None, delta_color="inverse")
+    st.metric(label, f"{val_str} {unit}", delta="CRITICAL" if is_crit else None, delta_color="inverse")
 
 def render_waveform_monitor(current_step: SimulationStep):
-    # Only render if data exists (it should due to sim engine fix)
     if not current_step["ecgWave"]:
         st.info("Initializing Monitor...")
         return
@@ -73,7 +78,7 @@ def render_fluid_manager():
     st.slider("Diuresis (mL)", 0, 5000, st.session_state.params["diuresisVolume"], 100, key="diuresis_slider", 
               on_change=lambda: st.session_state.params.update({"diuresisVolume": st.session_state.diuresis_slider}))
 
-# --- Chart Renderers (Fully Implemented) ---
+# --- Chart Renderers ---
 
 def render_forrester_plot(data):
     curr = data[-1]
@@ -91,11 +96,10 @@ def render_map_trend_plot(data):
     render_chart_container("MAP Trend", "Target > 65", fig)
 
 def render_guyton_plot(curr):
-    # Simplified Guyton Lines
     pmsf = curr['pmsf']
     cvp = np.linspace(0, 20, 20)
-    vr = np.maximum(0, (pmsf - cvp) / 2) # VR Curve
-    co = np.minimum(10, cvp * curr['contractility']) # Function Curve
+    vr = np.maximum(0, (pmsf - cvp) / 2)
+    co = np.minimum(10, cvp * curr['contractility'])
     
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=cvp, y=vr, name='VR', line_color='blue'))
@@ -132,6 +136,42 @@ def render_lactate_trend_plot(data):
     fig = go.Figure(go.Scatter(x=[d['time'] for d in data], y=[d['lactate'] for d in data], fill='tozeroy', line_color=COLORS['metabolic']))
     fig.update_layout(yaxis_title="Lactate")
     render_chart_container("Metabolic", "Lactate Clearance", fig)
+
+def render_preventive_sentinel(analysis: AdvancedAnalysis):
+    with st.container(border=True, height=200):
+        st.subheader("Sentinel Monitor")
+        if not analysis["risks"]:
+            st.success("System Stable")
+        for risk in analysis["risks"]:
+            st.warning(f"**{risk['label']}**: {risk['reasoning']}")
+
+def render_prescriptive_plan(analysis: AdvancedAnalysis):
+    with st.container(border=True, height=200):
+        st.subheader("Protocol Engine")
+        if not analysis["prescriptions"]:
+            st.info("Targets met")
+        for rx in analysis["prescriptions"]:
+            icon = "⚡" if rx['urgency'] == 'stat' else "📝"
+            st.info(f"{icon} **{rx['action']}**: {rx['rationale']}")
+
+def render_predictive_horizon(history: list, forecast: list, label: str):
+    if not forecast or len(history) < 5:
+        st.info("Insufficient data to generate forecast.")
+        return
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=[d['time'] for d in history], y=[d['map'] for d in history], mode='lines', line=dict(color=COLORS["hemo"], width=2), name='History'))
+    render_chart_container("Predictive Horizon", label, fig)
+
+def render_treatment_header(vis: float, weight: float):
+    c1, c2 = st.columns(2)
+    c1.metric("Vasoactive-Inotropic Score (VIS)", f"{vis:.1f}")
+    c2.metric("Patient Weight", f"{weight} kg")
+    
+def render_ventilator_panel(profile_id: str, callback: Callable):
+    st.slider("FiO2", 0.21, 1.0, st.session_state.params["resp"]["fio2"], 0.05, key="resp_fio2", on_change=callback, args=("fio2",))
+    st.slider("PEEP (cmH2O)", 0, 24, st.session_state.params["resp"]["peep"], 1, key="resp_peep", on_change=callback, args=("peep",))
+    st.slider("Rate (/min)", 8, 40, st.session_state.params["resp"]["rr"], 1, key="resp_rr", on_change=callback, args=("rr",))
+    st.slider("Tidal Volume (mL)", 250, 800, st.session_state.params["resp"]["tv"], 10, key="resp_tv", on_change=callback, args=("tv",))
 
 # --- Main Views ---
 def render_chart_tabs():
